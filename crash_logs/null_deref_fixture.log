@@ -1,0 +1,10 @@
+BUG: unable to handle kernel NULL pointer dereference at 0000000000000000
+Oops: 0002 [#1] SMP
+RIP: 0010:toy_write+0x18/0x40 [toy_crash]
+RAX: 0000000000000000 RBX: ffff888012340000 RCX: 0000000000000001
+Call Trace:
+ vfs_write+0xc7/0x390
+ ksys_write+0x67/0xe0
+ do_syscall_64+0x5b/0x80
+Kernel panic - not syncing: Fatal exception
+

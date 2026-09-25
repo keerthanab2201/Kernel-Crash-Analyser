@@ -1,0 +1,7 @@
+crash_id,source,crash_type,ground_truth_cause,ground_truth_status,source_url
+null_deref_fixture,synthetic_fixture,null_pointer_deref,toy driver dereferenced address zero,fixture_only,
+explicit_panic_fixture,synthetic_fixture,panic_explicit,explicit panic invoked by test code,fixture_only,
+stack_overflow_fixture,synthetic_fixture,stack_overflow,recursive test function exhausted kernel stack,fixture_only,
+uaf_fixture,synthetic_fixture,use_after_free,synthetic KASAN use-after-free signature,fixture_only,
+gpf_fixture,synthetic_fixture,general_protection_fault,sparse general protection fault fixture,fixture_only,
+

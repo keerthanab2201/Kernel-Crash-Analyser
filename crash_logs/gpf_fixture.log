@@ -1,0 +1,7 @@
+general protection fault, probably for non-canonical address 0xdffffc0000000001: 0000 [#1] SMP KASAN
+RIP: 0010:mystery_worker+0x44/0x90
+RAX: dead000000000100 RBX: 0000000000000000 RCX: 0000000000000001
+Call Trace:
+ process_one_work+0x7a0/0x11c0
+ worker_thread+0x5d0/0xf60
+

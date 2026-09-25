@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kernel-crash-analyzer"
+version = "0.1.0"
+description = "Research CLI for repeated-sample LLM diagnosis of Linux kernel crash logs"
+requires-python = ">=3.11"
+dependencies = [
+  "anthropic>=0.42,<1",
+  "click>=8.1,<9",
+  "matplotlib>=3.8,<4",
+  "numpy>=1.26,<3",
+  "scipy>=1.11,<2",
+  "pingouin>=0.5.4,<1",
+  "sentence-transformers>=3,<6",
+  "scikit-learn>=1.4,<2",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9"]
+
+[project.scripts]
+kernel-crash-analyzer = "src.cli:main"
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

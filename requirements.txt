@@ -1,0 +1,9 @@
+anthropic>=0.42,<1
+click>=8.1,<9
+matplotlib>=3.8,<4
+numpy>=1.26,<3
+scipy>=1.11,<2
+pingouin>=0.5.4,<1
+sentence-transformers>=3,<6
+scikit-learn>=1.4,<2
+pytest>=8,<9

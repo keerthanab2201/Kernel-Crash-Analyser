@@ -1,0 +1,7 @@
+BUG: TASK stack guard page was hit at 0000000000000000
+kernel stack overflow (double-fault): 0000 [#1] SMP
+RIP: 0010:recursive_crash+0x4/0x20 [stack_test]
+Call Trace:
+ recursive_crash+0x10/0x20 [stack_test]
+ recursive_crash+0x10/0x20 [stack_test]
+

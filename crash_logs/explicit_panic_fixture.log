@@ -1,0 +1,7 @@
+Kernel panic - not syncing: deliberate test panic
+CPU: 0 PID: 101 Comm: panic_test Not tainted 6.8.0-test
+Call Trace:
+ panic+0x17e/0x350
+ panic_test_write+0x21/0x30 [panic_test]
+ vfs_write+0xc7/0x390
+

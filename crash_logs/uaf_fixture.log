@@ -1,0 +1,7 @@
+BUG: KASAN: slab-use-after-free in toy_read+0x2a/0x60 [toy_uaf]
+Read of size 8 at addr ffff888012340008 by task cat/312
+RIP: 0010:toy_read+0x2a/0x60 [toy_uaf]
+Call Trace:
+ vfs_read+0xb5/0x340
+ ksys_read+0x63/0xe0
+
