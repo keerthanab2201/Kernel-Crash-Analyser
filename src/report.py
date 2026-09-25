@@ -33,7 +33,8 @@ def render_markdown(report: dict[str, Any], *, calibration_image: str | None = N
         "## Evaluation summary",
         "",
         f"- Crashes evaluated: **{report['n_crashes']}**",
-        f"- Requested/recorded model calls: **{report['api_calls']}**",
+        f"- Recorded repeats: **{report['api_calls']}**; recorded API attempts: **{report.get('recorded_api_attempts', 'unknown')}**",
+        f"- Malformed-attempt rate: **{_fmt(report.get('malformed_attempt_rate'))}**",
         f"- Failed calls: **{report['failed_calls']}** ({_fmt(report['failure_rate'])})",
         f"- Mean category entropy: **{_fmt(aggregate.get('mean_category_entropy_bits'))} bits**",
         f"- Mean semantic similarity: **{_fmt(aggregate.get('mean_semantic_similarity'))}**",
@@ -44,6 +45,8 @@ def render_markdown(report: dict[str, Any], *, calibration_image: str | None = N
     ]
     if report.get("failure_rate_warning"):
         lines += ["> **Call reliability warning:** More than 5% of model calls failed validation or exhausted retries.", ""]
+    if report.get("malformed_attempt_warning"):
+        lines += ["> **Validation warning:** More than 5% of recorded API attempts returned malformed or ungrounded diagnoses, including recovered retries.", ""]
     if report.get("small_sample_warning"):
         lines += ["> **Small-sample warning:** Estimates are descriptive and may be unstable; near-perfect values should not be treated as strong evidence.", ""]
     if calibration_image and calibration.get("n"):
@@ -96,7 +99,7 @@ def render_markdown(report: dict[str, Any], *, calibration_image: str | None = N
         "## Interpretation limits",
         "",
         "- Consistency is not correctness: repeated agreement can reinforce the same wrong diagnosis.",
-        "- Calibration uses one majority-vote outcome per labeled crash, so it is meaningful only when enough independently verified labels exist.",
+        "- Calibration scores individual predictions on verified crashes; repeats are correlated and are not independent sample units.",
         "- The well-defined/ambiguous split is a declared heuristic, not a discovered taxonomy.",
         "- Semantic similarity depends on a general-purpose embedding model and may miss kernel-specific distinctions.",
         "- Results apply only to the recorded model/version, prompt, logs, and repeat count.",
@@ -120,7 +123,7 @@ def plot_calibration(report: dict[str, Any], output_path: Path) -> bool:
     for x, y, count in zip(confidence, accuracy, counts, strict=True):
         axis.annotate(f"n={count}", (x, y), xytext=(5, 5), textcoords="offset points")
     axis.set(xlim=(0, 1), ylim=(0, 1), xlabel="Mean confidence", ylabel="Fraction correct")
-    axis.set_title("Majority-diagnosis calibration")
+    axis.set_title("Individual-diagnosis calibration")
     axis.grid(alpha=0.2)
     axis.legend()
     fig.tight_layout()

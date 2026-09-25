@@ -118,15 +118,17 @@ def confidence_icc(records: list[dict[str, Any]]) -> dict[str, Any]:
             per_crash[str(item["crash_id"])] = valid
     if not per_crash:
         return {"icc2_1": None, "n_crashes": 0, "n_raters": 0, "reason": "no valid ratings"}
-    run_sets = Counter(tuple(sorted(value)) for value in per_crash.values())
-    common_runs, _ = run_sets.most_common(1)[0]
+    requested = {int(item.get("requested_repeats", len(item.get("runs", [])))) for item in records}
+    if len(requested) != 1:
+        return {"icc2_1": None, "n_crashes": 0, "n_raters": 0, "reason": "mixed repeat counts"}
+    common_runs = tuple(range(next(iter(requested))))
     complete = {key: value for key, value in per_crash.items() if tuple(sorted(value)) == common_runs}
-    if len(complete) < 2 or len(common_runs) < 2:
+    if len(complete) < 2 or len(common_runs) < 2 or len(complete) * len(common_runs) < 5:
         return {
             "icc2_1": None,
             "n_crashes": len(complete),
             "n_raters": len(common_runs),
-            "reason": "ICC requires at least two crashes and two repeat raters",
+            "reason": "ICC requires two crashes, two raters, and at least five observations for Pingouin",
         }
     try:
         import pandas as pd
@@ -222,7 +224,7 @@ def evaluate(
         failed += sum(run.get("status") != "ok" for run in runs)
         valid = [run for run in runs if run.get("status") == "ok"]
         label = labels.get(str(item["crash_id"]), {})
-        expected = label.get("crash_type") or None
+        expected = label.get("crash_type") if label.get("ground_truth_status") == "verified" else None
         if not valid:
             per_crash.append({"crash_id": item["crash_id"], "valid_runs": 0, "failed_runs": len(runs)})
             continue
@@ -233,7 +235,7 @@ def evaluate(
         correct = majority == expected if expected else None
         result = {
             "crash_id": item["crash_id"],
-            "group": "well_defined" if (expected or majority) in WELL_DEFINED else "ambiguous",
+            "group": label.get("evidence_group") or "unannotated",
             "valid_runs": len(valid),
             "failed_runs": len(runs) - len(valid),
             "majority_category": majority,
@@ -247,11 +249,11 @@ def evaluate(
         }
         per_crash.append(result)
         if expected:
-            calibration_conf.append(result["mean_confidence"])
-            calibration_correct.append(bool(correct))
+            calibration_conf.extend(confidences)
+            calibration_correct.extend(run["category"] == expected for run in valid)
 
     groups: dict[str, Any] = {}
-    for group_name in ("well_defined", "ambiguous"):
+    for group_name in ("well_defined", "ambiguous", "unannotated"):
         ids = {row["crash_id"] for row in per_crash if row.get("group") == group_name}
         subset = [item for item in records if item["crash_id"] in ids]
         rows = [row for row in per_crash if row.get("group") == group_name]
@@ -267,16 +269,27 @@ def evaluate(
         for row in valid_rows
         if row.get("mean_semantic_similarity") is not None
     ]
+    attempt_rows = [attempt for item in records for run in item.get("runs", []) for attempt in run.get("attempts", [])]
+    malformed = sum(a["status"] == "malformed" for a in attempt_rows)
+    attempt_count = len(attempt_rows)
+    verified_rows = [row for row in valid_rows if row["majority_correct"] is not None]
     return {
         "methodology": {
             "entropy_log_base": 2,
             "icc": "ICC(2,1), absolute agreement, random repeat raters, single rating",
             "semantic_model": "sentence-transformers/all-MiniLM-L6-v2",
-            "calibration_unit": "one majority-vote prediction per labeled crash; confidence is mean across valid runs",
-            "group_rule": "well_defined iff ground-truth (or majority when unlabeled) is panic_explicit, null_pointer_deref, or stack_overflow",
+            "calibration_unit": "individual predictions on verified crashes; repeats are correlated, not independent samples",
+            "group_rule": "preannotated evidence_group; missing annotations remain unannotated",
         },
         "n_crashes": len(records),
         "api_calls": total,
+        "recorded_api_attempts": attempt_count,
+        "attempt_accounting_complete": all("attempts" in run for item in records for run in item.get("runs", [])),
+        "malformed_attempts": malformed,
+        "malformed_attempt_rate": malformed / attempt_count if attempt_count else None,
+        "malformed_attempt_warning": bool(attempt_count and malformed / attempt_count > 0.05),
+        "verified_crashes": len(verified_rows),
+        "majority_accuracy": float(np.mean([r["majority_correct"] for r in verified_rows])) if verified_rows else None,
         "failed_calls": failed,
         "failure_rate": (failed / total) if total else None,
         "failure_rate_warning": bool(total and failed / total > 0.05),

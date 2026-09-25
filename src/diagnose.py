@@ -6,6 +6,7 @@ import json
 import os
 import random
 import time
+import hashlib
 from pathlib import Path
 from typing import Any, Callable
 
@@ -24,7 +25,7 @@ SUBMIT_DIAGNOSIS_TOOL: dict[str, Any] = {
                 "type": "string",
                 "description": "One or two sentence plain-language explanation.",
             },
-            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+            "confidence": {"type": "number", "description": "Probability between 0 and 1 that the category is correct; checked locally."},
             "supporting_evidence": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -64,7 +65,7 @@ def _tool_input(response: Any) -> Any:
     return blocks[0].input
 
 
-def diagnose_once(client: Any, crash: ParsedCrash, *, model: str, max_tokens: int = 800) -> Diagnosis:
+def diagnose_once(client: Any, crash: ParsedCrash, *, model: str, max_tokens: int = 800, telemetry: dict | None = None) -> Diagnosis:
     response = client.messages.create(
         model=model,
         max_tokens=max_tokens,
@@ -73,7 +74,16 @@ def diagnose_once(client: Any, crash: ParsedCrash, *, model: str, max_tokens: in
         tool_choice={"type": "tool", "name": "submit_diagnosis"},
         messages=[{"role": "user", "content": _prompt(crash)}],
     )
-    return Diagnosis.from_mapping(_tool_input(response))
+    if telemetry is not None:
+        telemetry["response_id"] = getattr(response, "id", None)
+        telemetry["model"] = getattr(response, "model", model)
+        usage = getattr(response, "usage", None)
+        telemetry["usage"] = usage.model_dump() if hasattr(usage, "model_dump") else None
+    diagnosis = Diagnosis.from_mapping(_tool_input(response))
+    lines = {line.strip() for line in crash.raw_log.splitlines()}
+    if any(e.strip() not in lines for e in diagnosis.supporting_evidence):
+        raise ValueError("supporting evidence must match complete supplied log lines")
+    return diagnosis
 
 
 def diagnose_repeated(
@@ -90,17 +100,26 @@ def diagnose_repeated(
     runs: list[dict[str, Any]] = []
     for run_index in range(repeats):
         errors: list[str] = []
+        attempts: list[dict[str, Any]] = []
         for attempt in range(max_attempts):
+            trace: dict[str, Any] = {"attempt_index": attempt}
+            started = time.perf_counter()
             try:
-                diagnosis = diagnose_once(client, crash, model=model)
-                runs.append({"run_index": run_index, "status": "ok", **diagnosis.to_dict()})
+                diagnosis = diagnose_once(client, crash, model=model, telemetry=trace)
+                trace["status"] = "ok"
+                runs.append({"run_index": run_index, "status": "ok", "attempts": attempts, **diagnosis.to_dict()})
                 break
             except Exception as exc:  # SDK errors and schema failures are both retained.
-                errors.append(f"{type(exc).__name__}: {exc}")
+                trace["status"] = "malformed" if isinstance(exc, ValueError) else "api_error"
+                trace["error_type"] = type(exc).__name__
+                errors.append(type(exc).__name__)
                 if attempt + 1 < max_attempts:
                     sleeper((2**attempt) + random.random())
+            finally:
+                trace["latency_seconds"] = time.perf_counter() - started
+                attempts.append(trace)
         else:
-            runs.append({"run_index": run_index, "status": "failed", "errors": errors})
+            runs.append({"run_index": run_index, "status": "failed", "errors": errors, "attempts": attempts})
     return {
         "crash_id": crash.crash_id,
         "source_file": crash.source_file,
@@ -109,6 +128,7 @@ def diagnose_repeated(
         # unbounded console log into every downstream artifact.
         "log_excerpt": crash.raw_log[:4000],
         "model": model,
+        "prompt_sha256": hashlib.sha256(SYSTEM_PROMPT.encode()).hexdigest(),
         "requested_repeats": repeats,
         "runs": runs,
     }
@@ -121,7 +141,7 @@ def make_client() -> Any:
         raise RuntimeError("Install project dependencies before calling the Anthropic API") from exc
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise RuntimeError("ANTHROPIC_API_KEY is not set")
-    return anthropic.Anthropic()
+    return anthropic.Anthropic(max_retries=0, timeout=60.0)
 
 
 def load_parsed(path: Path) -> list[ParsedCrash]:
