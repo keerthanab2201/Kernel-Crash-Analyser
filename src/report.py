@@ -12,16 +12,20 @@ def _fmt(value: Any, digits: int = 3) -> str:
 
 
 def _consistency_verdict(metrics: dict[str, Any]) -> str:
+    if metrics.get("valid_runs", 0) < 2:
+        return "Insufficient repeated observations to assess consistency."
+    if metrics.get("failed_runs", 0):
+        return "Incomplete repeated sampling; successful-run agreement may be biased."
     entropy = metrics.get("category_entropy_bits")
     similarity = metrics.get("mean_semantic_similarity")
-    if entropy == 0 and (similarity is None or similarity >= 0.85):
-        return "Stable across sampled runs; this describes agreement, not correctness."
-    if entropy is not None and entropy <= 0.5 and (similarity is None or similarity >= 0.70):
-        return "Mostly stable across sampled runs, with some disagreement."
-    return "Unstable across sampled runs; the diagnosis should be treated cautiously."
+    if entropy == 0:
+        return "All sampled categories agree. Text similarity is descriptive; correctness requires independent verification."
+    return "Sampled categories disagree; inspect competing explanations and supporting lines."
 
 
-def render_markdown(report: dict[str, Any], *, calibration_image: str | None = None) -> str:
+def render_markdown(
+    report: dict[str, Any], *, calibration_image: str | None = None
+) -> str:
     icc = report["confidence_icc"]
     calibration = report["calibration"]
     aggregate = report["aggregate_consistency"]
@@ -44,13 +48,40 @@ def render_markdown(report: dict[str, Any], *, calibration_image: str | None = N
         "",
     ]
     if report.get("failure_rate_warning"):
-        lines += ["> **Call reliability warning:** More than 5% of model calls failed validation or exhausted retries.", ""]
+        lines += [
+            "> **Call reliability warning:** More than 5% of model calls failed validation or exhausted retries.",
+            "",
+        ]
     if report.get("malformed_attempt_warning"):
-        lines += ["> **Validation warning:** More than 5% of recorded API attempts returned malformed or ungrounded diagnoses, including recovered retries.", ""]
+        lines += [
+            "> **Validation warning:** More than 5% of recorded API attempts returned malformed or ungrounded diagnoses, including recovered retries.",
+            "",
+        ]
     if report.get("small_sample_warning"):
-        lines += ["> **Small-sample warning:** Estimates are descriptive and may be unstable; near-perfect values should not be treated as strong evidence.", ""]
+        lines += [
+            "> **Small-sample warning:** Estimates are descriptive and may be unstable; near-perfect values should not be treated as strong evidence.",
+            "",
+        ]
     if calibration_image and calibration.get("n"):
-        lines += ["## Calibration diagram", "", f"![Calibration reliability diagram]({calibration_image})", ""]
+        lines += [
+            "## Calibration diagram",
+            "",
+            f"![Calibration reliability diagram]({calibration_image})",
+            "",
+        ]
+    if report.get("groups"):
+        lines += [
+            "## Independently annotated evidence groups",
+            "",
+            "| Group | Crashes | Verified | Accuracy | Entropy | Similarity | ICC | Brier | ECE |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+        for name, group in report["groups"].items():
+            cal = group.get("calibration", {})
+            lines.append(
+                f"| {name} | {group['n_crashes']} | {group.get('verified_crashes', 0)} | {_fmt(group.get('majority_accuracy'))} | {_fmt(group.get('mean_entropy_bits'))} | {_fmt(group.get('mean_semantic_similarity'))} | {_fmt(group['confidence_icc'].get('icc2_1'))} | {_fmt(cal.get('brier_score'))} | {_fmt(cal.get('ece'))} |"
+            )
+        lines.append("")
     lines += [
         "## Per-crash consistency",
         "",
@@ -61,9 +92,15 @@ def render_markdown(report: dict[str, Any], *, calibration_image: str | None = N
     ]
     for row in report["per_crash"]:
         if not row.get("valid_runs"):
-            lines.append(f"| {row['crash_id']} | n/a | 0 | n/a | n/a | n/a | n/a | n/a | n/a |")
+            lines.append(
+                f"| {row['crash_id']} | n/a | 0 | n/a | n/a | n/a | n/a | n/a | n/a |"
+            )
             continue
-        correct = "n/a" if row["majority_correct"] is None else ("yes" if row["majority_correct"] else "no")
+        correct = (
+            "n/a"
+            if row["majority_correct"] is None
+            else ("yes" if row["majority_correct"] else "no")
+        )
         lines.append(
             f"| {row['crash_id']} | {row['group']} | {row['valid_runs']} | {row['majority_category']} | "
             f"{correct} | {_fmt(row['category_entropy_bits'])} | {_fmt(row['mean_semantic_similarity'])} | "
@@ -81,14 +118,18 @@ def render_markdown(report: dict[str, Any], *, calibration_image: str | None = N
                 "Log excerpt:",
                 "",
                 "```text",
-                example.get("log_excerpt") or "Log excerpt was not retained in this input artifact.",
+                example.get("log_excerpt")
+                or "Log excerpt was not retained in this input artifact.",
                 "```",
                 "",
                 "Repeated structured diagnoses:",
                 "",
             ]
             for diagnosis in example["diagnoses"]:
-                evidence = "; ".join(diagnosis.get("supporting_evidence", [])) or "none recorded"
+                evidence = (
+                    "; ".join(diagnosis.get("supporting_evidence", []))
+                    or "none recorded"
+                )
                 lines.append(
                     f"- Run {diagnosis.get('run_index')}: `{diagnosis.get('category')}` at "
                     f"{_fmt(diagnosis.get('confidence'))} — {diagnosis.get('likely_cause')} "
@@ -122,7 +163,9 @@ def plot_calibration(report: dict[str, Any], output_path: Path) -> bool:
     axis.plot(confidence, accuracy, marker="o", label="observed")
     for x, y, count in zip(confidence, accuracy, counts, strict=True):
         axis.annotate(f"n={count}", (x, y), xytext=(5, 5), textcoords="offset points")
-    axis.set(xlim=(0, 1), ylim=(0, 1), xlabel="Mean confidence", ylabel="Fraction correct")
+    axis.set(
+        xlim=(0, 1), ylim=(0, 1), xlabel="Mean confidence", ylabel="Fraction correct"
+    )
     axis.set_title("Individual-diagnosis calibration")
     axis.grid(alpha=0.2)
     axis.legend()
@@ -137,6 +180,8 @@ def render_file(input_path: Path, output_path: Path) -> None:
     image_path = output_path.with_name("calibration.png")
     has_plot = plot_calibration(report, image_path)
     output_path.write_text(
-        render_markdown(report, calibration_image=image_path.name if has_plot else None),
+        render_markdown(
+            report, calibration_image=image_path.name if has_plot else None
+        ),
         encoding="utf-8",
     )

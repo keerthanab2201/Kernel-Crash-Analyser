@@ -35,7 +35,10 @@ def mean_pairwise_cosine(embeddings: np.ndarray) -> float:
     if np.any(norms == 0):
         raise ValueError("zero-length embedding cannot be cosine-normalized")
     normalized = matrix / norms[:, None]
-    values = [float(normalized[i] @ normalized[j]) for i, j in itertools.combinations(range(len(matrix)), 2)]
+    values = [
+        float(normalized[i] @ normalized[j])
+        for i, j in itertools.combinations(range(len(matrix)), 2)
+    ]
     return float(np.mean(values))
 
 
@@ -44,7 +47,9 @@ def _embedding_model() -> Any:
     try:
         from sentence_transformers import SentenceTransformer
     except ImportError as exc:  # pragma: no cover
-        raise RuntimeError("sentence-transformers is required for semantic similarity") from exc
+        raise RuntimeError(
+            "sentence-transformers is required for semantic similarity"
+        ) from exc
     return SentenceTransformer("all-MiniLM-L6-v2")
 
 
@@ -62,16 +67,22 @@ def expected_calibration_error(
     if bins < 1 or np.any((conf < 0) | (conf > 1)):
         raise ValueError("invalid bins or confidence outside [0, 1]")
     # right=True ensures confidence exactly 1.0 belongs to the last bin.
-    assignments = np.minimum(np.digitize(conf, np.linspace(0, 1, bins + 1)[1:], right=True), bins - 1)
+    assignments = np.minimum(
+        np.digitize(conf, np.linspace(0, 1, bins + 1)[1:], right=True), bins - 1
+    )
     ece = 0.0
     for index in range(bins):
         mask = assignments == index
         if mask.any():
-            ece += float(mask.mean()) * abs(float(conf[mask].mean()) - float(corr[mask].mean()))
+            ece += float(mask.mean()) * abs(
+                float(conf[mask].mean()) - float(corr[mask].mean())
+            )
     return ece
 
 
-def calibration_summary(confidences: list[float], correctness: list[bool], *, bins: int = 5) -> dict[str, Any]:
+def calibration_summary(
+    confidences: list[float], correctness: list[bool], *, bins: int = 5
+) -> dict[str, Any]:
     if not confidences:
         return {"n": 0, "brier_score": None, "ece": None, "bins": []}
     conf = np.asarray(confidences, dtype=float)
@@ -117,13 +128,34 @@ def confidence_icc(records: list[dict[str, Any]]) -> dict[str, Any]:
         if valid:
             per_crash[str(item["crash_id"])] = valid
     if not per_crash:
-        return {"icc2_1": None, "n_crashes": 0, "n_raters": 0, "reason": "no valid ratings"}
-    requested = {int(item.get("requested_repeats", len(item.get("runs", [])))) for item in records}
+        return {
+            "icc2_1": None,
+            "n_crashes": 0,
+            "n_raters": 0,
+            "reason": "no valid ratings",
+        }
+    requested = {
+        int(item.get("requested_repeats", len(item.get("runs", []))))
+        for item in records
+    }
     if len(requested) != 1:
-        return {"icc2_1": None, "n_crashes": 0, "n_raters": 0, "reason": "mixed repeat counts"}
+        return {
+            "icc2_1": None,
+            "n_crashes": 0,
+            "n_raters": 0,
+            "reason": "mixed repeat counts",
+        }
     common_runs = tuple(range(next(iter(requested))))
-    complete = {key: value for key, value in per_crash.items() if tuple(sorted(value)) == common_runs}
-    if len(complete) < 2 or len(common_runs) < 2 or len(complete) * len(common_runs) < 5:
+    complete = {
+        key: value
+        for key, value in per_crash.items()
+        if tuple(sorted(value)) == common_runs
+    }
+    if (
+        len(complete) < 2
+        or len(common_runs) < 2
+        or len(complete) * len(common_runs) < 5
+    ):
         return {
             "icc2_1": None,
             "n_crashes": len(complete),
@@ -140,15 +172,28 @@ def confidence_icc(records: list[dict[str, Any]]) -> dict[str, Any]:
         for crash_id, values in complete.items()
         for run in common_runs
     ]
+    if len({row["confidence"] for row in rows}) == 1:
+        return {
+            "icc2_1": None,
+            "n_crashes": len(complete),
+            "n_raters": len(common_runs),
+            "reason": "constant confidence: variance ratio is undefined",
+        }
     table = pg.intraclass_corr(
-        data=pd.DataFrame(rows), targets="crash", raters="run", ratings="confidence", nan_policy="raise"
+        data=pd.DataFrame(rows),
+        targets="crash",
+        raters="run",
+        ratings="confidence",
+        nan_policy="raise",
     )
     # Pingouin <=0.5 names this Shrout-Fleiss form "ICC2"; 0.6 uses
     # McGraw-Wong notation "ICC(A,1)" for the same absolute-agreement,
     # two-way random-effects, single-measure statistic.
     matching = table.loc[table["Type"].isin(("ICC2", "ICC(A,1)"))]
     if matching.empty:
-        raise RuntimeError(f"Pingouin returned no ICC(2,1)/ICC(A,1) row: {table['Type'].tolist()}")
+        raise RuntimeError(
+            f"Pingouin returned no ICC(2,1)/ICC(A,1) row: {table['Type'].tolist()}"
+        )
     row = matching.iloc[0]
     value = float(row["ICC"])
     return {
@@ -213,6 +258,35 @@ def evaluate(
     embedder: Callable[[list[str]], np.ndarray] = default_embedder,
     calibration_bins: int = 5,
 ) -> dict[str, Any]:
+    seen = set()
+    for item in records:
+        if item["crash_id"] in seen:
+            raise ValueError("duplicate crash_id in diagnoses")
+        seen.add(item["crash_id"])
+        runs = item.get("runs", [])
+        requested = item.get("requested_repeats", len(runs))
+        if {r["run_index"] for r in runs} != set(range(requested)) or len(
+            runs
+        ) != requested:
+            raise ValueError(
+                "every requested repeat must have exactly one explicit record"
+            )
+        for run in runs:
+            if run.get("status") not in ("ok", "failed"):
+                raise ValueError("unknown run status")
+            if run["status"] == "ok":
+                confidence = run["confidence"]
+                if (
+                    isinstance(confidence, bool)
+                    or not isinstance(confidence, (int, float))
+                    or not math.isfinite(confidence)
+                    or not 0 <= confidence <= 1
+                ):
+                    raise ValueError("confidence must be a finite number in [0,1]")
+                from .models import CATEGORIES
+
+                if run["category"] not in CATEGORIES:
+                    raise ValueError("unknown diagnosis category")
     labels = _label_map(labels_path)
     per_crash: list[dict[str, Any]] = []
     calibration_conf: list[float] = []
@@ -225,14 +299,28 @@ def evaluate(
         failed += sum(run.get("status") != "ok" for run in runs)
         valid = [run for run in runs if run.get("status") == "ok"]
         label = labels.get(str(item["crash_id"]), {})
-        expected = label.get("crash_type") if label.get("ground_truth_status") == "verified" else None
+        expected = (
+            label.get("crash_type")
+            if label.get("ground_truth_status") == "verified"
+            else None
+        )
         if not valid:
-            per_crash.append({"crash_id": item["crash_id"], "valid_runs": 0, "failed_runs": len(runs)})
+            per_crash.append(
+                {
+                    "crash_id": item["crash_id"],
+                    "valid_runs": 0,
+                    "failed_runs": len(runs),
+                }
+            )
             continue
         categories = [run["category"] for run in valid]
         confidences = [float(run["confidence"]) for run in valid]
         majority = _majority(categories)
-        similarity = mean_pairwise_cosine(embedder([run["likely_cause"] for run in valid])) if len(valid) > 1 else math.nan
+        similarity = (
+            mean_pairwise_cosine(embedder([run["likely_cause"] for run in valid]))
+            if len(valid) > 1
+            else math.nan
+        )
         correct = majority == expected if expected else None
         result = {
             "crash_id": item["crash_id"],
@@ -243,17 +331,27 @@ def evaluate(
             "ground_truth_category": expected,
             "majority_correct": correct,
             "category_entropy_bits": category_entropy(categories),
-            "mean_semantic_similarity": similarity if math.isfinite(similarity) else None,
+            "mean_semantic_similarity": (
+                similarity if math.isfinite(similarity) else None
+            ),
             "mean_confidence": float(np.mean(confidences)),
-            "confidence_sd": float(np.std(confidences, ddof=1)) if len(confidences) > 1 else None,
+            "confidence_sd": (
+                float(np.std(confidences, ddof=1)) if len(confidences) > 1 else None
+            ),
             "icc_scope_note": "ICC is defined across crashes, not per crash.",
         }
         per_crash.append(result)
         if expected:
             calibration_conf.extend(confidences)
             calibration_correct.extend(run["category"] == expected for run in valid)
-            calibration_clusters.extend({"bug_family": label.get("bug_family") or item["crash_id"],
-                                         "brier": (float(run["confidence"]) - (run["category"] == expected)) ** 2} for run in valid)
+            calibration_clusters.extend(
+                {
+                    "bug_family": label.get("bug_family") or item["crash_id"],
+                    "brier": (float(run["confidence"]) - (run["category"] == expected))
+                    ** 2,
+                }
+                for run in valid
+            )
 
     groups: dict[str, Any] = {}
     for group_name in ("well_defined", "ambiguous", "unannotated"):
@@ -262,21 +360,66 @@ def evaluate(
         rows = [row for row in per_crash if row.get("group") == group_name]
         groups[group_name] = {
             "n_crashes": len(rows),
-            "mean_entropy_bits": float(np.mean([r["category_entropy_bits"] for r in rows])) if rows else None,
-            "mean_semantic_similarity": float(np.mean([r["mean_semantic_similarity"] for r in rows if r["mean_semantic_similarity"] is not None])) if any(r.get("mean_semantic_similarity") is not None for r in rows) else None,
+            "mean_entropy_bits": (
+                float(np.mean([r["category_entropy_bits"] for r in rows]))
+                if rows
+                else None
+            ),
+            "mean_semantic_similarity": (
+                float(
+                    np.mean(
+                        [
+                            r["mean_semantic_similarity"]
+                            for r in rows
+                            if r["mean_semantic_similarity"] is not None
+                        ]
+                    )
+                )
+                if any(r.get("mean_semantic_similarity") is not None for r in rows)
+                else None
+            ),
             "confidence_icc": confidence_icc(subset),
         }
+        annotated = [r for r in rows if r["majority_correct"] is not None]
+        expected_by_id = {r["crash_id"]: r["ground_truth_category"] for r in annotated}
+        predictions = [
+            (run, expected_by_id[item["crash_id"]])
+            for item in subset
+            if item["crash_id"] in expected_by_id
+            for run in item["runs"]
+            if run["status"] == "ok"
+        ]
+        groups[group_name]["verified_crashes"] = len(annotated)
+        groups[group_name]["majority_accuracy"] = (
+            float(np.mean([r["majority_correct"] for r in annotated]))
+            if annotated
+            else None
+        )
+        groups[group_name]["calibration"] = calibration_summary(
+            [r["confidence"] for r, _ in predictions],
+            [r["category"] == truth for r, truth in predictions],
+            bins=calibration_bins,
+        )
     valid_rows = [row for row in per_crash if row.get("valid_runs")]
     semantic_rows = [
         row["mean_semantic_similarity"]
         for row in valid_rows
         if row.get("mean_semantic_similarity") is not None
     ]
-    attempt_rows = [attempt for item in records for run in item.get("runs", []) for attempt in run.get("attempts", [])]
-    malformed = sum(a["status"] == "malformed" for a in attempt_rows)
-    attempt_count = len(attempt_rows)
+    attempt_rows = [
+        attempt
+        for item in records
+        for run in item.get("runs", [])
+        for attempt in run.get("attempts", [])
+    ]
+    sdk_calls = [
+        call for attempt in attempt_rows for call in attempt.get("calls", [attempt])
+    ]
+    malformed = sum(a["status"] == "malformed" for a in sdk_calls)
+    attempt_count = len(sdk_calls)
     verified_rows = [row for row in valid_rows if row["majority_correct"] is not None]
     from .benchmark import cluster_interval
+
     return {
         "methodology": {
             "entropy_log_base": 2,
@@ -288,13 +431,22 @@ def evaluate(
         "n_crashes": len(records),
         "api_calls": total,
         "recorded_api_attempts": attempt_count,
+        "diagnosis_attempts": len(attempt_rows),
         "recorded_sdk_requests": sum(len(a.get("calls", [])) for a in attempt_rows),
-        "attempt_accounting_complete": all("attempts" in run for item in records for run in item.get("runs", [])),
+        "attempt_accounting_complete": all(
+            "attempts" in run for item in records for run in item.get("runs", [])
+        ),
         "malformed_attempts": malformed,
         "malformed_attempt_rate": malformed / attempt_count if attempt_count else None,
-        "malformed_attempt_warning": bool(attempt_count and malformed / attempt_count > 0.05),
+        "malformed_attempt_warning": bool(
+            attempt_count and malformed / attempt_count > 0.05
+        ),
         "verified_crashes": len(verified_rows),
-        "majority_accuracy": float(np.mean([r["majority_correct"] for r in verified_rows])) if verified_rows else None,
+        "majority_accuracy": (
+            float(np.mean([r["majority_correct"] for r in verified_rows]))
+            if verified_rows
+            else None
+        ),
         "failed_calls": failed,
         "failure_rate": (failed / total) if total else None,
         "failure_rate_warning": bool(total and failed / total > 0.05),
@@ -305,9 +457,13 @@ def evaluate(
                 if valid_rows
                 else None
             ),
-            "mean_semantic_similarity": float(np.mean(semantic_rows)) if semantic_rows else None,
+            "mean_semantic_similarity": (
+                float(np.mean(semantic_rows)) if semantic_rows else None
+            ),
         },
-        "calibration": calibration_summary(calibration_conf, calibration_correct, bins=calibration_bins),
+        "calibration": calibration_summary(
+            calibration_conf, calibration_correct, bins=calibration_bins
+        ),
         "brier_cluster_ci95": cluster_interval(calibration_clusters, "brier"),
         "groups": groups,
         "per_crash": per_crash,
@@ -321,4 +477,6 @@ def load_diagnoses(path: Path) -> list[dict[str, Any]]:
 
 
 def write_report(report: dict[str, Any], output: Path) -> None:
-    output.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    output.write_text(
+        json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8"
+    )

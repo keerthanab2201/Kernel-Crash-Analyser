@@ -55,4 +55,3 @@ def test_calibration_plot_is_written(tmp_path):
     output = tmp_path / "calibration.png"
     assert plot_calibration(_report(), output) is True
     assert output.stat().st_size > 0
-

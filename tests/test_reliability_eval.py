@@ -40,7 +40,13 @@ def test_ece_and_brier_hand_computed():
 def test_confidence_one_is_in_last_bin():
     result = calibration_summary([1.0], [True], bins=5)
     assert result["bins"] == [
-        {"lower": 0.8, "upper": 1.0, "count": 1, "mean_confidence": 1.0, "fraction_correct": 1.0}
+        {
+            "lower": 0.8,
+            "upper": 1.0,
+            "count": 1,
+            "mean_confidence": 1.0,
+            "fraction_correct": 1.0,
+        }
     ]
 
 
@@ -104,3 +110,19 @@ def test_evaluate_reports_failures_and_aggregates():
     assert result["aggregate_consistency"]["mean_category_entropy_bits"] == 0.0
     assert result["aggregate_consistency"]["mean_semantic_similarity"] == 1.0
     assert result["worked_examples"][0]["crash_id"] == "one"
+
+
+def test_icc_absolute_agreement_penalizes_systematic_rater_shift():
+    # Unscaled ratings [[1,2,3],[2,3,4],[4,5,6]] have MS_target=7,
+    # MS_rater=3, MS_error=0. ICC(A,1)=7/(7+3*3/3)=0.7.
+    records = [
+        {
+            "crash_id": str(i),
+            "runs": [
+                {"run_index": j, "status": "ok", "confidence": x / 10}
+                for j, x in enumerate(row)
+            ],
+        }
+        for i, row in enumerate([[1, 2, 3], [2, 3, 4], [4, 5, 6]])
+    ]
+    assert confidence_icc(records)["icc2_1"] == pytest.approx(0.7)

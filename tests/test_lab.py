@@ -19,9 +19,19 @@ def test_capture_failure_keeps_pending_review_provenance(tmp_path):
     input_file = tmp_path / "input"
     input_file.write_bytes(b"fixture")
     output = tmp_path / "run"
-    result = capture(input_file, input_file, input_file, output, "panic", kernel_revision="test", qemu="nonexistent-kca-qemu-command")
+    result = capture(
+        input_file,
+        input_file,
+        input_file,
+        output,
+        "panic",
+        kernel_revision="test",
+        qemu="nonexistent-kca-qemu-command",
+    )
     assert result["ground_truth_status"] == "pending_review"
     assert result["launch_error"] == "FileNotFoundError"
     assert (output / "manifest.json").exists()
     with pytest.raises(FileExistsError):
-        capture(input_file, input_file, input_file, output, "panic", kernel_revision="test")
+        capture(
+            input_file, input_file, input_file, output, "panic", kernel_revision="test"
+        )

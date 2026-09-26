@@ -11,7 +11,9 @@ def test_diagnosis_contract_accepts_valid_mapping():
             "category": "panic_explicit",
             "likely_cause": "The panic was called explicitly.",
             "confidence": 0.9,
-            "supporting_evidence": ["Kernel panic - not syncing: deliberate test panic"],
+            "supporting_evidence": [
+                "Kernel panic - not syncing: deliberate test panic"
+            ],
         }
     )
     assert value.confidence == 0.9
@@ -93,7 +95,14 @@ def test_exhausted_attempt_is_explicit_failed_run():
 
 
 def test_invented_evidence_is_rejected():
-    value = {"category": "panic_explicit", "likely_cause": "test", "confidence": .8, "supporting_evidence": ["invented line"]}
-    record = diagnose_repeated(_Client([value]), _crash(), model="test", repeats=1, max_attempts=1)
+    value = {
+        "category": "panic_explicit",
+        "likely_cause": "test",
+        "confidence": 0.8,
+        "supporting_evidence": ["invented line"],
+    }
+    record = diagnose_repeated(
+        _Client([value]), _crash(), model="test", repeats=1, max_attempts=1
+    )
     assert record["runs"][0]["status"] == "failed"
     assert record["runs"][0]["attempts"][0]["status"] == "malformed"

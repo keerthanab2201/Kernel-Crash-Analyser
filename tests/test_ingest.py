@@ -28,4 +28,3 @@ def test_specific_signature_beats_generic_panic_trailer():
 def test_empty_log_rejected():
     with pytest.raises(ValueError, match="empty"):
         parse_log("  \n")
-

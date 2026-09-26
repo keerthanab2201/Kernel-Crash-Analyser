@@ -27,7 +27,10 @@ SUBMIT_DIAGNOSIS_TOOL: dict[str, Any] = {
                 "type": "string",
                 "description": "One or two sentence plain-language explanation.",
             },
-            "confidence": {"type": "number", "description": "Probability between 0 and 1 that the category is correct; checked locally."},
+            "confidence": {
+                "type": "number",
+                "description": "Probability between 0 and 1 that the category is correct; checked locally.",
+            },
             "supporting_evidence": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -47,7 +50,9 @@ Submit exactly one diagnosis through submit_diagnosis."""
 
 
 def _prompt(crash: ParsedCrash) -> str:
-    numbered = "\n".join(f"L{i}: {line}" for i, line in enumerate(crash.raw_log.splitlines(), 1))
+    numbered = "\n".join(
+        f"L{i}: {line}" for i, line in enumerate(crash.raw_log.splitlines(), 1)
+    )
     return (
         f"Parser guess (weak evidence only): {crash.crash_type_guess}\n"
         f"Faulting instruction: {crash.faulting_instruction}\n"
@@ -65,12 +70,24 @@ def _tool_input(response: Any) -> Any:
         and getattr(block, "name", None) == "submit_diagnosis"
     ]
     if len(blocks) != 1:
-        raise ValueError(f"expected exactly one submit_diagnosis call; got {len(blocks)}")
+        raise ValueError(
+            f"expected exactly one submit_diagnosis call; got {len(blocks)}"
+        )
     return blocks[0].input
 
 
-def diagnose_once(client: Any, crash: ParsedCrash, *, model: str, max_tokens: int = 800, telemetry: dict | None = None, evidence_tools=None, max_tool_rounds: int = 3) -> Diagnosis:
+def diagnose_once(
+    client: Any,
+    crash: ParsedCrash,
+    *,
+    model: str,
+    max_tokens: int = 800,
+    telemetry: dict | None = None,
+    evidence_tools=None,
+    max_tool_rounds: int = 3,
+) -> Diagnosis:
     from .investigation import TOOLS
+
     messages = [{"role": "user", "content": _prompt(crash)}]
     calls = telemetry.setdefault("calls", []) if telemetry is not None else []
     for round_index in range(max_tool_rounds + 1 if evidence_tools else 1):
@@ -78,15 +95,26 @@ def diagnose_once(client: Any, crash: ParsedCrash, *, model: str, max_tokens: in
         started = time.perf_counter()
         call = {"round": round_index, "status": "api_error"}
         calls.append(call)
-        response = client.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            system=SYSTEM_PROMPT,
-            tools=[SUBMIT_DIAGNOSIS_TOOL] + (TOOLS if evidence_tools else []),
-            tool_choice={"type": "tool", "name": "submit_diagnosis"} if final_round else {"type": "any", "disable_parallel_tool_use": True},
-            messages=messages,
+        try:
+            response = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                system=SYSTEM_PROMPT,
+                tools=[SUBMIT_DIAGNOSIS_TOOL] + (TOOLS if evidence_tools else []),
+                tool_choice=(
+                    {"type": "tool", "name": "submit_diagnosis"}
+                    if final_round
+                    else {"type": "any", "disable_parallel_tool_use": True}
+                ),
+                messages=messages,
+            )
+        finally:
+            call["latency_seconds"] = time.perf_counter() - started
+        call.update(
+            status="ok",
+            latency_seconds=time.perf_counter() - started,
+            response_id=getattr(response, "id", None),
         )
-        call.update(status="ok", latency_seconds=time.perf_counter() - started, response_id=getattr(response, "id", None))
         usage = getattr(response, "usage", None)
         call["usage"] = usage.model_dump() if hasattr(usage, "model_dump") else None
         blocks = [b for b in response.content if getattr(b, "type", None) == "tool_use"]
@@ -94,6 +122,7 @@ def diagnose_once(client: Any, crash: ParsedCrash, *, model: str, max_tokens: in
             raise ValueError("expected exactly one tool call")
         block = blocks[0]
         if block.name == "submit_diagnosis":
+            call["tool"] = {"name": block.name, "input": block.input}
             break
         if final_round:
             raise ValueError("investigation budget exhausted without diagnosis")
@@ -102,19 +131,38 @@ def diagnose_once(client: Any, crash: ParsedCrash, *, model: str, max_tokens: in
         except (ValueError, KeyError, TypeError):
             result = {"error": "invalid evidence-tool request"}
         call["tool"] = {"name": block.name, "input": block.input, "result": result}
-        messages.append({"role": "assistant", "content": [b.model_dump() for b in response.content]})
-        messages.append({"role": "user", "content": [{"type": "tool_result", "tool_use_id": block.id, "content": json.dumps(result)}]})
+        messages.append(
+            {"role": "assistant", "content": [b.model_dump() for b in response.content]}
+        )
+        messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": json.dumps(result),
+                    }
+                ],
+            }
+        )
     if telemetry is not None:
         telemetry["response_id"] = getattr(response, "id", None)
         telemetry["model"] = getattr(response, "model", model)
         usage = getattr(response, "usage", None)
-        telemetry["usage"] = usage.model_dump() if hasattr(usage, "model_dump") else None
+        telemetry["usage"] = (
+            usage.model_dump() if hasattr(usage, "model_dump") else None
+        )
     diagnosis = Diagnosis.from_mapping(_tool_input(response))
     lines = {line.strip() for line in crash.raw_log.splitlines()}
     if any(e.strip() not in lines for e in diagnosis.supporting_evidence):
         raise ValueError("supporting evidence must match complete supplied log lines")
     if telemetry is not None:
-        telemetry["evidence_line_ids"] = [i for i, line in enumerate(crash.raw_log.splitlines(), 1) if line.strip() in {e.strip() for e in diagnosis.supporting_evidence}]
+        telemetry["evidence_line_ids"] = [
+            i
+            for i, line in enumerate(crash.raw_log.splitlines(), 1)
+            if line.strip() in {e.strip() for e in diagnosis.supporting_evidence}
+        ]
     return diagnosis
 
 
@@ -131,10 +179,15 @@ def diagnose_repeated(
     if repeats < 1 or max_attempts < 1:
         raise ValueError("repeats and max_attempts must be positive")
     redactor = Redactor()
-    crash = replace(crash, raw_log=redactor.redact(crash.raw_log), faulting_instruction=redactor.redact(crash.faulting_instruction or ""))
+    crash = replace(
+        crash,
+        raw_log=redactor.redact(crash.raw_log),
+        faulting_instruction=redactor.redact(crash.faulting_instruction or ""),
+    )
     evidence_tools = None
     if corpus:
         from .investigation import EvidenceTools
+
         evidence_tools = EvidenceTools(crash.raw_log, corpus)
     runs: list[dict[str, Any]] = []
     for run_index in range(repeats):
@@ -144,24 +197,52 @@ def diagnose_repeated(
             trace: dict[str, Any] = {"attempt_index": attempt}
             started = time.perf_counter()
             try:
-                diagnosis = diagnose_once(client, crash, model=model, telemetry=trace, evidence_tools=evidence_tools)
+                diagnosis = diagnose_once(
+                    client,
+                    crash,
+                    model=model,
+                    telemetry=trace,
+                    evidence_tools=evidence_tools,
+                )
                 trace["status"] = "ok"
-                runs.append({"run_index": run_index, "status": "ok", "attempts": attempts, **diagnosis.to_dict()})
+                runs.append(
+                    {
+                        "run_index": run_index,
+                        "status": "ok",
+                        "attempts": attempts,
+                        **diagnosis.to_dict(),
+                    }
+                )
                 break
-            except Exception as exc:  # SDK errors and schema failures are both retained.
-                trace["status"] = "malformed" if isinstance(exc, ValueError) else "api_error"
+            except (
+                Exception
+            ) as exc:  # SDK errors and schema failures are both retained.
+                trace["status"] = (
+                    "malformed" if isinstance(exc, ValueError) else "api_error"
+                )
+                if trace.get("calls") and isinstance(exc, ValueError):
+                    trace["calls"][-1]["status"] = "malformed"
                 trace["error_type"] = type(exc).__name__
                 errors.append(type(exc).__name__)
+                trace["latency_seconds"] = time.perf_counter() - started
                 # Authentication/configuration failures cannot recover through sampling.
                 if getattr(exc, "status_code", None) in (400, 401, 403, 404):
                     raise
                 if attempt + 1 < max_attempts:
-                    sleeper((2**attempt) + random.random())
+                    trace["backoff_seconds"] = (2**attempt) + random.random()
+                    sleeper(trace["backoff_seconds"])
             finally:
-                trace["latency_seconds"] = time.perf_counter() - started
+                trace.setdefault("latency_seconds", time.perf_counter() - started)
                 attempts.append(trace)
         else:
-            runs.append({"run_index": run_index, "status": "failed", "errors": errors, "attempts": attempts})
+            runs.append(
+                {
+                    "run_index": run_index,
+                    "status": "failed",
+                    "errors": errors,
+                    "attempts": attempts,
+                }
+            )
     return {
         "crash_id": crash.crash_id,
         "source_file": Path(crash.source_file).name,
@@ -171,6 +252,7 @@ def diagnose_repeated(
         "log_excerpt": crash.raw_log[:4000],
         "model": model,
         "prompt_sha256": hashlib.sha256(SYSTEM_PROMPT.encode()).hexdigest(),
+        "request_prompt_sha256": hashlib.sha256(_prompt(crash).encode()).hexdigest(),
         "corpus_sha256": evidence_tools.corpus_sha256 if evidence_tools else None,
         "redaction": "HMAC pseudonyms scoped to one incident; best-effort patterns",
         "requested_repeats": repeats,
@@ -182,14 +264,18 @@ def make_client() -> Any:
     try:
         import anthropic
     except ImportError as exc:  # pragma: no cover - depends on optional runtime install
-        raise RuntimeError("Install project dependencies before calling the Anthropic API") from exc
+        raise RuntimeError(
+            "Install project dependencies before calling the Anthropic API"
+        ) from exc
     if not os.environ.get("ANTHROPIC_API_KEY"):
         raise RuntimeError("ANTHROPIC_API_KEY is not set")
     return anthropic.Anthropic(max_retries=0, timeout=60.0)
 
 
 def load_parsed(path: Path) -> list[ParsedCrash]:
-    return [ParsedCrash(**item) for item in json.loads(path.read_text(encoding="utf-8"))]
+    return [
+        ParsedCrash(**item) for item in json.loads(path.read_text(encoding="utf-8"))
+    ]
 
 
 def write_diagnoses(items: list[dict[str, Any]], output: Path) -> None:

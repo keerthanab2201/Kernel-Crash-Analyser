@@ -13,8 +13,16 @@ from .models import ParsedCrash
 _TYPE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("stack_overflow", re.compile(r"kernel stack overflow|stack guard page", re.I)),
     ("use_after_free", re.compile(r"KASAN:.*use-after-free|use-after-free", re.I)),
-    ("null_pointer_deref", re.compile(r"null pointer dereference|unable to handle kernel NULL", re.I)),
-    ("deadlock", re.compile(r"possible circular locking dependency|hard LOCKUP|soft lockup", re.I)),
+    (
+        "null_pointer_deref",
+        re.compile(r"null pointer dereference|unable to handle kernel NULL", re.I),
+    ),
+    (
+        "deadlock",
+        re.compile(
+            r"possible circular locking dependency|hard LOCKUP|soft lockup", re.I
+        ),
+    ),
     ("panic_explicit", re.compile(r"Kernel panic - not syncing:", re.I)),
     ("general_protection_fault", re.compile(r"general protection fault", re.I)),
 )
@@ -54,7 +62,9 @@ def _guess_type(text: str) -> str:
     return "unknown_other"
 
 
-def parse_log(text: str, *, crash_id: str | None = None, source_file: str = "<memory>") -> ParsedCrash:
+def parse_log(
+    text: str, *, crash_id: str | None = None, source_file: str = "<memory>"
+) -> ParsedCrash:
     if not isinstance(text, str) or not text.strip():
         raise ValueError("crash log is empty")
     normalized = "\n".join(_strip_kernel_prefix(line) for line in text.splitlines())
@@ -113,4 +123,3 @@ def write_parsed(crashes: Iterable[ParsedCrash], output: Path) -> None:
         json.dumps([crash.to_dict() for crash in crashes], indent=2) + "\n",
         encoding="utf-8",
     )
-
