@@ -59,6 +59,25 @@ def report_command(report_json: Path, output: Path) -> None:
     click.echo(f"Rendered {output}")
 
 
+@main.command("benchmark")
+@click.argument("manifest", type=click.Path(exists=True, path_type=Path))
+@click.option("--diagnoses", type=click.Path(exists=True, path_type=Path))
+@click.option("--retrieval-diagnoses", type=click.Path(exists=True, path_type=Path))
+@click.option("--output", default="benchmark.json", type=click.Path(path_type=Path))
+def benchmark_command(manifest, diagnoses, retrieval_diagnoses, output):
+    """Compare regex, single, repeated, and retrieval predictions on identical incidents."""
+    from .benchmark import compare
+    methods = {"regex": []}
+    if diagnoses:
+        records = load_diagnoses(diagnoses)
+        methods.update(single_llm=records, repeated_llm=records)
+    if retrieval_diagnoses:
+        methods["retrieval_llm"] = load_diagnoses(retrieval_diagnoses)
+    result = compare(manifest, methods)
+    write_report(result, output)
+    click.echo(json.dumps(result["methods"], indent=2))
+
+
 @main.command("analyze")
 @click.argument("log_file", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--repeats", type=click.IntRange(2), default=5, show_default=True)

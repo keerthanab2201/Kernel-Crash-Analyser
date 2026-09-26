@@ -159,10 +159,10 @@ def confidence_icc(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _majority(values: list[str]) -> str:
-    # Deterministic tie break avoids result changes due only to JSON ordering.
+def _majority(values: list[str]) -> str | None:
     counts = Counter(values)
-    return sorted(counts, key=lambda item: (-counts[item], item))[0]
+    top = counts.most_common()
+    return None if len(top) > 1 and top[0][1] == top[1][1] else top[0][0]
 
 
 def _label_map(labels_path: Path | None) -> dict[str, dict[str, str]]:
@@ -217,6 +217,7 @@ def evaluate(
     per_crash: list[dict[str, Any]] = []
     calibration_conf: list[float] = []
     calibration_correct: list[bool] = []
+    calibration_clusters: list[dict] = []
     failed = total = 0
     for item in records:
         runs = item.get("runs", [])
@@ -251,6 +252,8 @@ def evaluate(
         if expected:
             calibration_conf.extend(confidences)
             calibration_correct.extend(run["category"] == expected for run in valid)
+            calibration_clusters.extend({"bug_family": label.get("bug_family") or item["crash_id"],
+                                         "brier": (float(run["confidence"]) - (run["category"] == expected)) ** 2} for run in valid)
 
     groups: dict[str, Any] = {}
     for group_name in ("well_defined", "ambiguous", "unannotated"):
@@ -273,6 +276,7 @@ def evaluate(
     malformed = sum(a["status"] == "malformed" for a in attempt_rows)
     attempt_count = len(attempt_rows)
     verified_rows = [row for row in valid_rows if row["majority_correct"] is not None]
+    from .benchmark import cluster_interval
     return {
         "methodology": {
             "entropy_log_base": 2,
@@ -303,6 +307,7 @@ def evaluate(
             "mean_semantic_similarity": float(np.mean(semantic_rows)) if semantic_rows else None,
         },
         "calibration": calibration_summary(calibration_conf, calibration_correct, bins=calibration_bins),
+        "brier_cluster_ci95": cluster_interval(calibration_clusters, "brier"),
         "groups": groups,
         "per_crash": per_crash,
         "worked_examples": _worked_examples(records, per_crash),
