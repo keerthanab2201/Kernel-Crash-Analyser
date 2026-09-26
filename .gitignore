@@ -11,4 +11,11 @@ parsed_logs.json
 reliability_report.json
 reports/*.png
 .cache/
-
+lab-runs/
+*.ko
+*.o
+*.mod
+*.mod.c
+*.cmd
+Module.symvers
+modules.order

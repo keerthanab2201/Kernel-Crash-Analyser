@@ -95,5 +95,19 @@ def analyze_command(log_file: Path, repeats: int, model: str) -> None:
     click.echo("\nRaw diagnoses:\n" + json.dumps(record, indent=2))
 
 
+@main.command("lab-capture")
+@click.option("--kernel", required=True, type=click.Path(exists=True, path_type=Path))
+@click.option("--config", required=True, type=click.Path(exists=True, path_type=Path))
+@click.option("--busybox", required=True, type=click.Path(exists=True, path_type=Path))
+@click.option("--module", type=click.Path(exists=True, path_type=Path))
+@click.option("--kernel-revision", required=True)
+@click.option("--action", required=True, type=click.Choice(["panic", "null", "overflow", "uaf", "module-uaf", "module-fixed"]))
+@click.option("--output", required=True, type=click.Path(path_type=Path))
+def lab_command(kernel, config, busybox, module, kernel_revision, action, output):
+    """Boot a disposable, diskless QEMU guest and capture a deliberate fault."""
+    from .lab import capture
+    click.echo(json.dumps(capture(kernel, config, busybox, output, action, kernel_revision=kernel_revision, module=module), indent=2))
+
+
 if __name__ == "__main__":
     main()

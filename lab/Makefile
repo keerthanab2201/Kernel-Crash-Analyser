@@ -1,0 +1,4 @@
+obj-m += kca_demo.o
+KDIR ?= /lib/modules/$(shell uname -r)/build
+all:
+	$(MAKE) -C $(KDIR) M=$(CURDIR) modules
