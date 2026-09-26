@@ -22,6 +22,7 @@ Do not promote the bundled parser fixtures to verified incidents.
 
 ```
 python -m src.cli benchmark dataset/manifest.json --diagnoses diagnoses.json --retrieval-diagnoses retrieval.json --output benchmark.json
+python -m src.cli benchmark-report benchmark.json --output reports/benchmark.md
 ```
 
 All methods use identical verified test incidents. Missing predictions count as
@@ -41,3 +42,16 @@ Report category accuracy separately from manually reviewed causal claims. Review
 the explanation without method labels, record `supported`, `unsupported`, or
 `insufficient_evidence`, and keep disagreements. Verbatim citations alone cannot
 establish that a causal explanation is true.
+
+## Evidence sensitivity
+
+```
+python -m src.cli perturb dataset/logs/incident-001.log --mode remove-signatures --output dataset/views/incident-001-masked.log
+```
+
+Other modes remove stack frames or append a labeled instruction-injection payload.
+Hashes and line counts are stored beside each view. Retain the parent's bug family
+and split, and do not count these as newly collected root causes. Check residual
+leakage manually: function names and trigger text may still disclose the mechanism.
+Compare accuracy, confidence, unsupported causal claims and abstention across
+views; corruption should not silently change the ground-truth mechanism.

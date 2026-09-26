@@ -219,5 +219,28 @@ def benchmark_report_command(benchmark_json, output):
     click.echo(f"Wrote {output}")
 
 
+@main.command("perturb")
+@click.argument("log", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option(
+    "--mode",
+    required=True,
+    type=click.Choice(["remove-signatures", "remove-stack", "instruction-injection"]),
+)
+@click.option("--output", required=True, type=click.Path(path_type=Path))
+def perturb_command(log, mode, output):
+    """Create an auditable degraded view; retain its parent's family and split."""
+    from .robustness import perturb
+
+    text, provenance = perturb(log.read_text(encoding="utf-8"), mode)
+    if output.exists() or output.with_suffix(".provenance.json").exists():
+        raise click.ClickException(
+            "Choose new output paths to preserve existing evidence"
+        )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(text, encoding="utf-8")
+    write_report(provenance, output.with_suffix(".provenance.json"))
+    click.echo(f"Wrote {output} and provenance metadata")
+
+
 if __name__ == "__main__":
     main()
