@@ -154,10 +154,3 @@ not a complete knowledge base or a dense embedding retriever. Semantic similarit
 still uses sentence-transformers. Ground-truth root-cause explanations require
 manual review in addition to category labels. The 40-incident study, a measured
 LLM improvement over regex, and a working 5G lab remain experimental work.
-
-## Resume bullets (use only after the corresponding work is verified)
-
-Do not add sample counts, accuracy, or reliability claims until the corresponding
-artifacts are committed and reproducible. Once completed, describe the actual tool,
-the verified/public split, and the observed consistency-versus-correctness result;
-retain the small-sample and single-provider caveats.
