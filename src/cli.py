@@ -109,5 +109,16 @@ def lab_command(kernel, config, busybox, module, kernel_revision, action, output
     click.echo(json.dumps(capture(kernel, config, busybox, output, action, kernel_revision=kernel_revision, module=module), indent=2))
 
 
+@main.command("cellular-timeline")
+@click.argument("logs", nargs=-1, required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--output", default="cellular-timeline.json", type=click.Path(path_type=Path))
+def cellular_command(logs, output):
+    """Correlate one lab scenario's cellular log events; no root-cause inference."""
+    from .cellular import timeline
+    result = timeline({str(path): path.read_text(encoding="utf-8", errors="replace") for path in logs})
+    write_report(result, output)
+    click.echo(f"Recorded {len(result['events'])} events in {output}")
+
+
 if __name__ == "__main__":
     main()

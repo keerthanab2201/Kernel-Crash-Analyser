@@ -1,0 +1,46 @@
+name: controlled-fault-lab
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install isolated guest build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential flex bison libelf-dev libssl-dev bc qemu-system-x86 busybox-static
+          pip install click numpy
+      - name: Fetch Linux v6.12 sources
+        run: git clone --depth 1 --branch v6.12 https://github.com/torvalds/linux.git "$RUNNER_TEMP/linux"
+      - name: Build instrumented guest kernel and educational module
+        run: |
+          cd "$RUNNER_TEMP/linux"
+          make defconfig
+          scripts/kconfig/merge_config.sh -m .config "$GITHUB_WORKSPACE/lab/kernel.config.fragment"
+          make olddefconfig
+          grep -q '^CONFIG_KASAN=y' .config
+          grep -q '^CONFIG_LKDTM=y' .config
+          make -j2 bzImage
+          make -j2 modules_prepare
+          make -C "$GITHUB_WORKSPACE/lab" KDIR="$RUNNER_TEMP/linux"
+      - name: Capture diskless guest experiments
+        run: |
+          revision=$(git -C "$RUNNER_TEMP/linux" rev-parse HEAD)
+          for action in panic null overflow uaf module-uaf module-fixed; do
+            python -m src.cli lab-capture --kernel "$RUNNER_TEMP/linux/arch/x86/boot/bzImage" --config "$RUNNER_TEMP/linux/.config" --busybox /usr/bin/busybox --kernel-revision "$revision" --module lab/kca_demo.ko --action "$action" --output "lab-runs/$action"
+          done
+          cp "$RUNNER_TEMP/linux/.config" lab-runs/kernel.config
+          git -C "$RUNNER_TEMP/linux" rev-parse HEAD > lab-runs/kernel-revision.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: controlled-fault-captures
+          path: lab-runs/
+          retention-days: 14
