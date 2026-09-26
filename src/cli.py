@@ -32,10 +32,14 @@ def ingest_command(log_directory: Path, output: Path) -> None:
 @click.argument("parsed_json", type=click.Path(exists=True, dir_okay=False, path_type=Path))
 @click.option("--output", type=click.Path(path_type=Path), default=Path("diagnoses.json"), show_default=True)
 @click.option("--repeats", type=click.IntRange(1), default=5, show_default=True)
+@click.option("--corpus", type=click.Path(exists=True, dir_okay=False, path_type=Path), help="Approved versioned documentation corpus for bounded investigation.")
 @click.option("--model", default=lambda: os.getenv("KCA_MODEL", "claude-sonnet-5"), show_default="KCA_MODEL or claude-sonnet-5")
-def diagnose_command(parsed_json: Path, output: Path, repeats: int, model: str) -> None:
+def diagnose_command(parsed_json: Path, output: Path, repeats: int, model: str, corpus: Path | None) -> None:
     client = make_client()
-    records = [diagnose_repeated(client, crash, model=model, repeats=repeats) for crash in load_parsed(parsed_json)]
+    records = []
+    for crash in load_parsed(parsed_json):
+        records.append(diagnose_repeated(client, crash, model=model, repeats=repeats, corpus=corpus))
+        write_diagnoses(records, output)
     write_diagnoses(records, output)
     click.echo(f"Wrote {len(records)} repeated-diagnosis records to {output}")
 

@@ -75,6 +75,7 @@ def test_strict_tool_contract_and_retry_preserves_run():
         sleeper=lambda _: None,
     )
     assert record["runs"][0]["status"] == "ok"
+    assert len(record["runs"][0]["attempts"]) == 2
     assert record["log_excerpt"].startswith("Kernel panic")
 
 
@@ -89,3 +90,10 @@ def test_exhausted_attempt_is_explicit_failed_run():
     )
     assert record["runs"][0]["status"] == "failed"
     assert len(record["runs"][0]["errors"]) == 2
+
+
+def test_invented_evidence_is_rejected():
+    value = {"category": "panic_explicit", "likely_cause": "test", "confidence": .8, "supporting_evidence": ["invented line"]}
+    record = diagnose_repeated(_Client([value]), _crash(), model="test", repeats=1, max_attempts=1)
+    assert record["runs"][0]["status"] == "failed"
+    assert record["runs"][0]["attempts"][0]["status"] == "malformed"

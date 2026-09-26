@@ -288,6 +288,7 @@ def evaluate(
         "n_crashes": len(records),
         "api_calls": total,
         "recorded_api_attempts": attempt_count,
+        "recorded_sdk_requests": sum(len(a.get("calls", [])) for a in attempt_rows),
         "attempt_accounting_complete": all("attempts" in run for item in records for run in item.get("runs", [])),
         "malformed_attempts": malformed,
         "malformed_attempt_rate": malformed / attempt_count if attempt_count else None,

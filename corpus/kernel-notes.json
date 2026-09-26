@@ -1,0 +1,9 @@
+{
+  "version": "2026-09-26-authored-notes-v1",
+  "description": "Project-authored summaries; documentation only. Review relevance against the incident kernel revision.",
+  "documents": [
+    {"id": "kasan-overview", "kind": "documentation", "source_url": "https://docs.kernel.org/dev-tools/kasan.html", "revision": "documentation-snapshot-2026-09-26", "text": "KASAN is a dynamic detector of invalid memory accesses. Use-after-free and out-of-bounds are different failure modes. Inspect the reported access and available allocation/free stacks before asserting the mechanism. A sanitizer signature identifies an observed violation; a verified reproducer or code review is needed for an exact causal claim.", "symbols": []},
+    {"id": "lockdep-overview", "kind": "documentation", "source_url": "https://docs.kernel.org/locking/lockdep-design.html", "revision": "documentation-snapshot-2026-09-26", "text": "Lockdep tracks locking dependencies to identify potential deadlocks. A reported circular dependency indicates a possible problematic ordering; it is not by itself proof that the captured execution actually deadlocked. Compare lock acquisition order and context.", "symbols": []},
+    {"id": "lkdtm-overview", "kind": "documentation", "source_url": "https://docs.kernel.org/fault-injection/provoke-crashes.html", "revision": "documentation-snapshot-2026-09-26", "text": "LKDTM intentionally triggers kernel failures for testing exception handling and crash dumping. Available actions depend on the kernel build; query the debugfs DIRECT interface. PANIC and OVERFLOW are example trigger types. A test-trigger message can disclose the injected mechanism and should be tracked as possible benchmark label leakage.", "symbols": []}
+  ]
+}
