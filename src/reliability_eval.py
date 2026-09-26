@@ -310,6 +310,14 @@ def evaluate(
                     "crash_id": item["crash_id"],
                     "valid_runs": 0,
                     "failed_runs": len(runs),
+                    "group": label.get("evidence_group") or "unannotated",
+                    "ground_truth_category": expected,
+                    "majority_category": None,
+                    "majority_correct": False if expected else None,
+                    "category_entropy_bits": None,
+                    "mean_semantic_similarity": None,
+                    "mean_confidence": None,
+                    "confidence_sd": None,
                 }
             )
             continue
@@ -361,8 +369,12 @@ def evaluate(
         groups[group_name] = {
             "n_crashes": len(rows),
             "mean_entropy_bits": (
-                float(np.mean([r["category_entropy_bits"] for r in rows]))
-                if rows
+                float(
+                    np.mean(
+                        [r["category_entropy_bits"] for r in rows if r["valid_runs"]]
+                    )
+                )
+                if any(r["valid_runs"] for r in rows)
                 else None
             ),
             "mean_semantic_similarity": (
@@ -417,7 +429,7 @@ def evaluate(
     ]
     malformed = sum(a["status"] == "malformed" for a in sdk_calls)
     attempt_count = len(sdk_calls)
-    verified_rows = [row for row in valid_rows if row["majority_correct"] is not None]
+    verified_rows = [row for row in per_crash if row["majority_correct"] is not None]
     from .benchmark import cluster_interval
 
     return {

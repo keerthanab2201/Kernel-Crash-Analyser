@@ -54,3 +54,18 @@ def test_recovered_malformed_attempt_is_counted():
 def test_missing_repeat_is_not_silently_removed_from_denominator():
     with pytest.raises(ValueError, match="every requested"):
         evaluate([{"crash_id": "a", "requested_repeats": 2, "runs": []}])
+
+
+def test_total_api_failure_counts_against_verified_accuracy(tmp_path):
+    labels = tmp_path / "labels.csv"
+    labels.write_text(
+        "crash_id,crash_type,ground_truth_status,evidence_group\na,panic_explicit,verified,well_defined\n"
+    )
+    result = evaluate(
+        [{"crash_id": "a", "runs": [{"run_index": 0, "status": "failed"}]}],
+        labels_path=labels,
+    )
+    assert result["verified_crashes"] == 1
+    assert result["majority_accuracy"] == 0
+    assert result["groups"]["well_defined"]["n_crashes"] == 1
+    assert result["calibration"]["n"] == 0
