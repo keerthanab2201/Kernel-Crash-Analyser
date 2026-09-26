@@ -27,8 +27,7 @@ jobs:
           make olddefconfig
           grep -q '^CONFIG_KASAN=y' .config
           grep -q '^CONFIG_LKDTM=y' .config
-          make -j2 bzImage
-          make -j2 modules_prepare
+          make -j2 bzImage modules
           make -C "$GITHUB_WORKSPACE/lab" KDIR="$RUNNER_TEMP/linux"
       - name: Capture diskless guest experiments
         run: |

@@ -5,9 +5,27 @@ Anthropic model for a strict tool-call diagnosis multiple times, and measures
 whether those repeated diagnoses agree. It keeps self-consistency separate from
 correctness: agreement, by itself, does not prove that a diagnosis is right.
 
-This repository currently contains the implementation and five **synthetic parser
-fixtures**. It does not yet contain the proposed 40-log study or any genuine model
-evaluation results. The placeholder report therefore makes no performance claims.
+This repository contains five **synthetic parser fixtures**, a controlled QEMU fault
+lab, and a benchmark that compares regex, single-call, repeated-call, and optional
+retrieval-assisted diagnoses. Live model results are not available yet. Controlled
+captures remain pending review until their observed traces match the injected fault.
+
+![Tests](https://github.com/keerthanab2201/Kernel-Crash-Analyser/actions/workflows/ci.yml/badge.svg)
+
+## Engineering walkthrough
+
+1. [C lifetime bug and corrected path](lab/kca_demo.c): allocation, last consumer,
+   and ownership release, compiled in CI without loading the host module.
+2. [Disposable QEMU lab](lab/README.md): deterministic initramfs and captured serial
+   logs with kernel/config hashes. A manual GitHub workflow runs the experiments.
+3. [Evaluation contract](docs/METHODOLOGY.md): verified-label gating, complete-repeat
+   ICC, per-prediction calibration, and visible recovered failures.
+4. [Benchmark](docs/BENCHMARK.md): grouped development/test split, common incident
+   denominator, baseline comparisons, and development-tuned abstention.
+5. [Evidence tools](docs/INVESTIGATION.md): bounded local retrieval, exact-revision
+   lookup, citation checks, request traces, and best-effort log redaction.
+6. [Cellular study](docs/CELLULAR_STUDY.md): a separate event-timeline adapter and
+   proposed controlled registration/session experiments. No cellular accuracy claim.
 
 ## What is implemented
 
@@ -19,6 +37,8 @@ evaluation results. The placeholder report therefore makes no performance claims
   ICC(2,1), majority-vote accuracy, Brier score, and binned ECE.
 - Markdown reporting with failure-rate and small-sample warnings.
 - A calibration reliability diagram when labeled examples are available.
+- Bug-family bootstrap intervals, development-only abstention tuning, and risk–coverage curves in benchmark JSON.
+- Three bounded read-only investigation tools backed by a versioned documentation corpus.
 - A batch pipeline and a single-log `analyze` command.
 - Unit tests for parsing and hand-computed statistical cases.
 
@@ -61,16 +81,16 @@ The one-log result does not include ICC: ICC requires multiple crashes as target
 - **Semantic similarity:** mean cosine similarity over all pairs of `likely_cause`
   embeddings from `all-MiniLM-L6-v2`.
 - **Confidence ICC:** ICC(2,1), absolute agreement, two-way random-effects, single
-  measurement. Crashes are targets and repeat indices are raters. Only the largest
-  group with a common complete run-index set is used; missing calls are not imputed.
-- **Calibration:** one observation per labeled crash. The predicted class is the
-  deterministic majority category and its confidence is the mean confidence over
-  valid repeats. Brier score and ECE therefore assess the majority diagnosis, not
-  individual calls.
+  measurement. Crashes are targets and repeat indices are raters. Only complete
+  requested repeat sets enter ICC; mixed repeat counts return unavailable.
+- **Calibration:** each prediction's confidence is scored against the correctness
+  of that prediction's category, on verified incidents only. Repeats are correlated;
+  Brier uncertainty resamples whole bug families. Consensus vote share is a ranking
+  score, not an estimated probability of correctness. Tied votes have no winner.
 
-The `well_defined` group is declared in advance as explicit panic, NULL dereference,
-or stack overflow. All other enum categories are grouped as `ambiguous`. This is an
-analysis heuristic, not a learned or universally valid kernel taxonomy.
+The optional `evidence_group` annotation is assigned before looking at predictions.
+Missing values remain `unannotated`. A difference between evidence groups is a
+hypothesis to test, not an expected result to manufacture.
 
 ## Dataset protocol and attribution
 
@@ -94,10 +114,11 @@ and [crash reproduction guide](https://github.com/google/syzkaller/blob/master/d
 
 ## Failure handling
 
-Every requested repeat becomes either an `ok` record or a `failed` record with the
-attempt errors. Evaluation never silently filters the denominator: it reports the
-failure rate and emits a warning above 5%. Malformed tool input is treated as a
-failed attempt even though tool use is forced by the API request.
+Every repeat retains its attempts, including recovered validation failures. Tool
+rounds retain SDK request counts, usage, latency, and response IDs. Evaluation
+separately reports exhausted-repeat and malformed-attempt rates and warns above
+5%. SDK retries are disabled. Authentication/configuration errors fail immediately.
+Exact line matching checks citation existence, not whether it proves a causal claim.
 
 ## Limitations
 
@@ -120,7 +141,21 @@ pytest
 The tests emphasize parser precedence and statistics with hand-computed expected
 values. Network/API calls are deliberately excluded from CI.
 
-## Resume bullets (use only after a real run)
+## Current verification and remaining experiments
+
+Python unit and regression tests run on every push. CI also compiles the C module
+against Linux headers. The manual `controlled-fault-lab` workflow builds Linux v6.12
+with KASAN/LKDTM and captures six guest scenarios as downloadable artifacts.
+Compilation and mock API tests do not verify live provider behavior. A live run
+needs `ANTHROPIC_API_KEY` and the Anthropic SDK installed.
+
+The retrieval baseline uses TF-IDF over three authored documentation notes; it is
+not a complete knowledge base or a dense embedding retriever. Semantic similarity
+still uses sentence-transformers. Ground-truth root-cause explanations require
+manual review in addition to category labels. The 40-incident study, a measured
+LLM improvement over regex, and a working 5G lab remain experimental work.
+
+## Resume bullets (use only after the corresponding work is verified)
 
 Do not add sample counts, accuracy, or reliability claims until the corresponding
 artifacts are committed and reproducible. Once completed, describe the actual tool,
