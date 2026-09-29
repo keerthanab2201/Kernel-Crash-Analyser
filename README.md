@@ -98,13 +98,8 @@ python -m src.cli analyze path/to/crash.log --model YOUR_MODEL_ID --repeats 5
 
 Optional investigation adds `--corpus corpus/kernel-notes.json` to `diagnose`. The bundled retriever uses **TF-IDF over three authored notes**, not a large knowledge base or dense vector search. Its effectiveness has not been measured.
 
-## Connection to wireless systems work
 
-The project exercises transferable skills in memory-lifetime debugging, trace analysis, reproducible fault injection, and evaluation of AI-assisted engineering tools. A separate [cellular event-timeline adapter and study plan](docs/CELLULAR_STUDY.md) explores registration/session logs.
-
-**It is not an Apple-platform or modem diagnostic tool.** The cellular adapter does not establish causality, and an end-to-end 4G/5G experiment has not been demonstrated.
-
-## Highest-value next experiments
+## Further Work
 
 1. **Publish a reproducible, held-out model benchmark.** Freeze incident families, model/prompt/corpus versions, and verified labels; compare against regex and single-call baselines. Report failures, uncertainty, latency, and token usage—even if repeated calls do not improve results.
 2. **Finish the controlled-fault evidence package.** Preserve reviewed traces and the faulty/fixed C comparison, repair and rerun the failed overflow trigger, and distinguish intended faults from observed failure modes.
